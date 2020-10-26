@@ -1,0 +1,9 @@
+.vs/
+mcServerStarter/bin/
+mcServerStarter/obj/
+mcServerStarterService/bin/
+mcServerStarterService/obj/
+mcServerStarterService/publish/
+packages/
+mcServerStarterApp/bin/
+mcServerStarterApp/obj/
