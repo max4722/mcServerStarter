@@ -12,11 +12,15 @@ namespace McServerStarter
     using Microsoft.Extensions.DependencyInjection;
     using Microsoft.Extensions.Logging.Console;
 
-    public static class Starter
+    public class Starter
     {
         private static IServiceProvider _serviceProvider;
         private static CancellationTokenSource _shutDownCts;
         private static ManualResetEventSlim _done;
+
+        private Starter()
+        {
+        }
 
         public static async Task StartAsync(bool interactiveMode)
         {
@@ -105,7 +109,7 @@ namespace McServerStarter
             AppDomain.CurrentDomain.ProcessExit += OnAppDomainCurrentDomainProcessExit;
             void OnAppDomainCurrentDomainProcessExit(object sender, EventArgs eventArgs)
             {
-                AppDomain.CurrentDomain.ProcessExit += OnAppDomainCurrentDomainProcessExit;
+                AppDomain.CurrentDomain.ProcessExit -= OnAppDomainCurrentDomainProcessExit;
                 Shutdown();
             }
         }

@@ -13,5 +13,7 @@ namespace McServerStarter
         public string ProcessPath { get; set; }
 
         public string Args { get; set; }
+
+        public int ShutDownTimeout { get; set; }
     }
 }

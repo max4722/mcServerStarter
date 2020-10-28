@@ -8,6 +8,7 @@ namespace McServerStarterService
     public partial class McServerStarterService : ServiceBase
     {
         private CancellationTokenSource _shutDownCts;
+        private Task _runTask;
 
         public McServerStarterService()
         {
@@ -21,30 +22,42 @@ namespace McServerStarterService
 
         private async void RunServiceAsync()
         {
-            using (_shutDownCts = new CancellationTokenSource())
+            try
             {
-                while (!_shutDownCts.IsCancellationRequested)
+                using (_shutDownCts = new CancellationTokenSource())
                 {
-                    try
+                    //while (!_shutDownCts.IsCancellationRequested)
                     {
-                        await McServerStarter.Starter.StartAsync(interactiveMode: false);
-                    }
-                    catch (Exception e)
-                    {
-                        EventLog.WriteEntry(e.ToString(), System.Diagnostics.EventLogEntryType.Error);
-                    }
+                        try
+                        {
+                            _runTask = McServerStarter.Starter.StartAsync(interactiveMode: false);
+                            await _runTask;
+                        }
+                        catch (Exception e)
+                        {
+                            EventLog.WriteEntry(e.ToString(), System.Diagnostics.EventLogEntryType.Error);
+                        }
 
-                    await Task.Delay(1000);
+                        //await Task.Delay(1000);
+                    }
                 }
             }
-
-            _shutDownCts = null;
+            finally
+            {
+                _shutDownCts = null;
+                _runTask = null;
+            }
         }
 
-        protected override void OnStop()
+        protected async override void OnStop()
         {
             _shutDownCts?.Cancel();
             McServerStarter.Starter.Shutdown();
+            while (_runTask != null)
+            {
+                RequestAdditionalTime(1000);
+                await Task.Delay(1000, _shutDownCts.Token);
+            }
         }
     }
 }

@@ -9,6 +9,7 @@
   "MonitorServiceOptions": {
     "RootPath": "C:/Tools/mcserver",
     "ProcessPath": "C:/jdk/jdk-14.0.1/bin/java.exe",
-    "Args": "-Xms2G -Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -jar fabric-server-launch.jar nogui"
+    "Args": "-Xms2G -Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -jar fabric-server-launch.jar nogui",
+    "ShutDownTimeout": 5000
   }
 }

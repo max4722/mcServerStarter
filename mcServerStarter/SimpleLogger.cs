@@ -23,7 +23,6 @@ namespace McServerStarter
         {
             _logger.LogInformation(message, args);
             _nlog.Log(NLog.LogLevel.Info, message, args);
-            _nlog.Log(NLog.LogLevel.Info, message, args);
         }
 
         public void LogDebug(string message, params object[] args)

@@ -31,83 +31,102 @@ namespace McServerStarter
             _logger.LogDebug($"{nameof(MonitorService)} destroyed");
         }
 
-        public Task RunAsync(CancellationToken shutdownToken, bool interativeMode)
+        public async Task RunAsync(CancellationToken shutdownToken, bool interativeMode)
         {
+            if (_tcs != null)
+            {
+                await _tcs.Task;
+                return;
+            }
+
             _logger.LogInformation("Starting ...");
-            _tcs = new TaskCompletionSource<EventArgs>();
-            _process = new Process
+            try
             {
-                EnableRaisingEvents = true,
-            };
-            _process.ErrorDataReceived += (object sender, DataReceivedEventArgs e) =>
-            {
-                _logger.LogError($"> {e.Data}");
-            };
-
-            _process.OutputDataReceived += (object sender, DataReceivedEventArgs e) =>
-            {
-                _logger.LogInformation($"> {e.Data}");
-            };
-
-            _process.Exited += (object sender, EventArgs e) =>
-            {
-                _logger.LogDebug("process exit");
-                _tcs.TrySetResult(e);
-            };
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                _process.StartInfo = new ProcessStartInfo
+                using (var process = new Process())
                 {
-                    //FileName = "powershell",
-                    //Arguments = "\"& \"npx serve\"",
-                    FileName = _options.ProcessPath,
-                    Arguments = _options.Args,
-                    //RedirectStandardError = true,
-                    //RedirectStandardOutput = true,
-                    RedirectStandardInput = true,
-                    UseShellExecute = false,
-                };
+                    process.EnableRaisingEvents = true;
+                    process.ErrorDataReceived += (object sender, DataReceivedEventArgs e) =>
+                    {
+                        _logger.LogError($"> {e.Data}");
+                    };
+
+                    process.OutputDataReceived += (object sender, DataReceivedEventArgs e) =>
+                    {
+                        _logger.LogInformation($"> {e.Data}");
+                    };
+
+                    process.Exited += (object sender, EventArgs e) =>
+                    {
+                        _logger.LogDebug("worker process exit");
+                        _tcs.TrySetResult(e);
+                    };
+
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        process.StartInfo = new ProcessStartInfo
+                        {
+                            FileName = _options.ProcessPath,
+                            Arguments = _options.Args,
+                            RedirectStandardError = interativeMode,
+                            RedirectStandardOutput = interativeMode,
+                            RedirectStandardInput = true,
+                            UseShellExecute = false,
+                        };
+                    }
+                    else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    {
+                        process.StartInfo = new ProcessStartInfo
+                        {
+                            FileName = _options.ProcessPath,
+                            Arguments = _options.Args,
+                            RedirectStandardError = interativeMode,
+                            RedirectStandardOutput = interativeMode,
+                            RedirectStandardInput = true,
+                            UseShellExecute = false,
+                        };
+                    }
+                    else
+                    {
+                        throw new NotImplementedException($"Not implmented for this OS. {RuntimeInformation.OSDescription}");
+                    }
+
+                    Directory.SetCurrentDirectory(_options.RootPath);
+
+                    if (!process.Start())
+                    {
+                        return;
+                    }
+
+                    _process = process;
+                    _tcs = new TaskCompletionSource<EventArgs>();
+                    if (interativeMode)
+                    {
+                        _process.BeginOutputReadLine();
+                        _process.BeginErrorReadLine();
+                        ReadInputAsync(shutdownToken);
+                    }
+
+                    using (var shutdownCtr = shutdownToken.Register(ShutDown))
+                    {
+                        await _tcs.Task;
+                    }
+                }
             }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            finally
             {
-                _process.StartInfo = new ProcessStartInfo
-                {
-                    //FileName = "npx",
-                    //Arguments = "serve",
-                    FileName = _options.ProcessPath,
-                    Arguments = _options.Args,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardInput = true,
-                    UseShellExecute = false,
-                };
+                _tcs = null;
+                _process = null;
             }
-            else
-            {
-                throw new NotImplementedException($"Not implmented for this OS. {RuntimeInformation.OSDescription}");
-            }
-
-            Directory.SetCurrentDirectory(_options.RootPath);
-
-            _process.Start();
-
-            //_process.BeginOutputReadLine();
-            //_process.BeginErrorReadLine();
-
-            shutdownToken.Register(ShutDown);
-            if (interativeMode)
-            {
-                ReadInputAsync(shutdownToken);
-            }
-
-            return _tcs.Task;
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
             _logger.LogDebug("Disposing ...");
-            return new ValueTask(Task.CompletedTask);
+            if (_tcs != null)
+            {
+                _tcs.TrySetResult(EventArgs.Empty);
+                await _tcs.Task;
+            }
         }
 
         private async void ReadInputAsync(CancellationToken cancellationToken)
@@ -128,7 +147,6 @@ namespace McServerStarter
 
                 await _process.StandardInput.WriteAsync(buffer, 0, len);
             }
-
         }
 
         private async void ShutDown()
@@ -144,19 +162,24 @@ namespace McServerStarter
                     return;
                 }
 
-                using (var writer = _process.StandardInput)
+                _process.StandardInput.WriteLine("/stop");
+
+                _logger.LogInformation($"Stop command sent. Waiting for worker response");
+                await Task.WhenAny(Task.Delay(_options.ShutDownTimeout), _tcs.Task);
+                if (_process != null)
                 {
-                    writer.WriteLine("/stop");
+                    _logger.LogWarning("Shutdown timeout reached. Killing worker process.");
+                    _process.Kill();
+                    _process.WaitForExit();
+                    _tcs.TrySetResult(EventArgs.Empty);
                 }
 
-                _logger.LogInformation($"Stop command sent. Waiting for response");
-                await _tcs.Task;
-                _logger.LogInformation($"process stopped");
-                _process = null;
+                _logger.LogInformation($"worker process stopped");
             }
             catch (Exception e)
             {
                 _logger.LogError(e.ToString());
+                _tcs?.TrySetException(e);
             }
         }
     }
